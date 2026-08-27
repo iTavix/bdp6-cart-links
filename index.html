@@ -22,6 +22,7 @@
     --link: #7a4d00;
     --linkbox-bg: rgba(255, 255, 255, 0.55);
     --green: #248a3d;
+    --red: #d70015;
     --shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
     --blob-opacity: 0.5;
   }
@@ -38,6 +39,7 @@
     --link: #ffd60a;
     --linkbox-bg: rgba(0, 0, 0, 0.35);
     --green: #30d158;
+    --red: #ff453a;
     --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     --blob-opacity: 0.25;
   }
@@ -99,6 +101,14 @@
     .brand-logo { height: 48px; }
   }
 
+  .step-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .restore-btn {
+    background: none; border: none; padding: 0;
+    font-size: 12px; font-weight: 600; font-family: inherit; color: var(--accent);
+    cursor: pointer; flex-shrink: 0;
+  }
+  .restore-btn[hidden] { display: none; }
+
   .step-label {
     font-size: 12px; font-weight: 600; text-transform: uppercase;
     letter-spacing: 1.2px; color: var(--text2);
@@ -116,6 +126,8 @@
 
   .sets { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   @media (max-width: 480px) { .sets { grid-template-columns: 1fr; } }
+  .set-item { display: flex; flex-direction: column; gap: 6px; }
+  .set-fields { display: flex; gap: 6px; }
   .set-card {
     background: var(--glass);
     border: 1px solid var(--glass-border);
@@ -142,6 +154,15 @@
   .set-card .name { font-size: 13px; margin-top: 2px; }
   .set-card .price { font-size: 12px; color: var(--text2); margin-top: 3px; font-variant-numeric: tabular-nums; }
   .set-card.active .code { color: var(--accent); }
+  .code-input, .name-input {
+    padding: 8px 10px; font: 600 13px/1.2 "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    background: var(--glass); color: var(--text); border: 1px solid var(--glass-border);
+    border-radius: 10px; outline: none;
+  }
+  .code-input { flex: 0 0 104px; min-width: 0; }
+  .name-input { flex: 1; min-width: 0; font-family: inherit; font-weight: 500; }
+  .code-input:focus, .name-input:focus { border-color: var(--accent); }
+  .code-input.invalid, .name-input.invalid { border-color: var(--red); }
 
   select {
     width: 100%; padding: 13px 14px; font-size: 16px;
@@ -245,7 +266,10 @@
     <div class="note" id="loginNote"></div>
   </header>
 
-  <div class="step-label" id="step1"></div>
+  <div class="step-head">
+    <div class="step-label" id="step1"></div>
+    <button class="restore-btn" id="restoreBtn" type="button" hidden></button>
+  </div>
   <div class="sets" id="sets"></div>
 
   <div class="step-label" id="step2"></div>
@@ -360,6 +384,11 @@ const I18N = {
     allTitle: 'Tutti i set Serie 6 per lo store selezionato',
     copyAll: '📋 Copia tutti e 5 (nome + link)',
     copyMini: 'Copia',
+    codeLabel: 'Codice prodotto',
+    nameLabel: 'Nome del set',
+    codePh: 'Codice',
+    namePh: 'Nome',
+    restore: '\u21ba Ripristina',
     manualCopy: 'Copia manualmente il link:',
     footer: 'Creata con amore da <a href="https://www.instagram.com/itavix_bricks/" target="_blank" rel="noopener">iTavix</a> e Claude',
   },
@@ -376,17 +405,45 @@ const I18N = {
     allTitle: 'All Series 6 sets for the selected store',
     copyAll: '📋 Copy all 5 (name + link)',
     copyMini: 'Copy',
+    codeLabel: 'Product code',
+    nameLabel: 'Set name',
+    codePh: 'Code',
+    namePh: 'Name',
+    restore: '\u21ba Reset',
     manualCopy: 'Copy the link manually:',
     footer: 'Made with love by <a href="https://www.instagram.com/itavix_bricks/" target="_blank" rel="noopener">iTavix</a> and Claude',
   },
 };
 
+const SETS_DEFAULT = SETS.map(s => ({ code: s.code, name: s.name }));
+
 const $ = id => document.getElementById(id);
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  remove(k) { try { localStorage.removeItem(k); } catch (e) {} },
 };
 let lang = store.get('bdp6-lang') || 'it';
+
+// I set modificati a mano restano salvati fino al ripristino
+function isEdited() {
+  return SETS.some((s, i) => s.code !== SETS_DEFAULT[i].code || s.name !== SETS_DEFAULT[i].name);
+}
+function saveSets() {
+  if (isEdited()) store.set('bdp6-sets', JSON.stringify(SETS.map(s => ({ code: s.code, name: s.name }))));
+  else store.remove('bdp6-sets');
+  $('restoreBtn').hidden = !isEdited();
+}
+function loadSets() {
+  let saved;
+  try { saved = JSON.parse(store.get('bdp6-sets')); } catch (e) { return; }
+  if (!Array.isArray(saved) || saved.length !== SETS.length) return;
+  saved.forEach((v, i) => {
+    if (v && typeof v.code === 'string') SETS[i].code = v.code;
+    if (v && typeof v.name === 'string') SETS[i].name = v.name;
+  });
+}
+loadSets();
 let selectedCode = null;
 const t = key => I18N[lang][key];
 
@@ -414,6 +471,8 @@ function applyLang(l) {
   $('step1').textContent = t('step1');
   $('step2').textContent = t('step2');
   $('footer').innerHTML = t('footer');
+  $('restoreBtn').textContent = t('restore');
+  refreshSetLabels();
   buildStoreSelect();
   update();
 }
@@ -421,19 +480,96 @@ $('langIt').onclick = () => applyLang('it');
 $('langEn').onclick = () => applyLang('en');
 
 // --- set cards ---
+const setRows = [];
 SETS.forEach(s => {
+  const item = document.createElement('div');
+  item.className = 'set-item';
+
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'set-card';
-  b.innerHTML = `<div class="code">${s.code}</div><div class="name">${s.name}</div><div class="price">${s.price}</div>`;
+  b.innerHTML = '<div class="code"></div><div class="name"></div><div class="price"></div>';
+  const codeEl = b.querySelector('.code');
+  const nameEl = b.querySelector('.name');
+  codeEl.textContent = s.code;
+  nameEl.textContent = s.name;
+  b.querySelector('.price').textContent = s.price;
   b.onclick = () => {
+    if (!s.code) return;
     selectedCode = s.code;
     document.querySelectorAll('.set-card').forEach(c => c.classList.remove('active'));
     b.classList.add('active');
     update();
   };
-  $('sets').appendChild(b);
+
+  const fields = document.createElement('div');
+  fields.className = 'set-fields';
+
+  const codeInput = document.createElement('input');
+  codeInput.className = 'code-input';
+  codeInput.type = 'text';
+  codeInput.value = s.code;
+  codeInput.addEventListener('input', () => {
+    const oldCode = s.code;
+    s.code = codeInput.value.trim();
+    codeInput.classList.toggle('invalid', !s.code);
+    codeEl.textContent = s.code;
+    // se il codice sparisce, sparisce anche il link: mai lasciarne uno vecchio in giro
+    if (selectedCode === oldCode) selectedCode = s.code;
+    if (!s.code) b.classList.remove('active');
+    saveSets();
+    refreshSetLabels();
+    update();
+  });
+
+  const nameInput = document.createElement('input');
+  nameInput.className = 'name-input';
+  nameInput.type = 'text';
+  nameInput.value = s.name;
+  nameInput.addEventListener('input', () => {
+    s.name = nameInput.value.trim();
+    nameInput.classList.toggle('invalid', !s.name);
+    nameEl.textContent = s.name;
+    saveSets();
+    refreshSetLabels();
+    update();
+  });
+
+  fields.appendChild(codeInput);
+  fields.appendChild(nameInput);
+  item.appendChild(b);
+  item.appendChild(fields);
+  $('sets').appendChild(item);
+  setRows.push({ s, b, codeInput, nameInput });
 });
+
+function refreshSetLabels() {
+  setRows.forEach(({ s, codeInput, nameInput }) => {
+    codeInput.placeholder = t('codePh');
+    nameInput.placeholder = t('namePh');
+    codeInput.setAttribute('aria-label', `${t('codeLabel')}: ${s.name || s.code}`);
+    nameInput.setAttribute('aria-label', `${t('nameLabel')}: ${s.code || s.name}`);
+  });
+}
+
+// --- ripristino dei valori originali ---
+$('restoreBtn').onclick = () => {
+  setRows.forEach(({ s, b, codeInput, nameInput }, i) => {
+    const wasSelected = selectedCode === s.code;
+    s.code = SETS_DEFAULT[i].code;
+    s.name = SETS_DEFAULT[i].name;
+    codeInput.value = s.code;
+    nameInput.value = s.name;
+    codeInput.classList.remove('invalid');
+    nameInput.classList.remove('invalid');
+    b.querySelector('.code').textContent = s.code;
+    b.querySelector('.name').textContent = s.name;
+    if (wasSelected) selectedCode = s.code;
+  });
+  saveSets();
+  refreshSetLabels();
+  update();
+};
 
 // --- store select ---
 const sel = $('store');
@@ -460,7 +596,7 @@ function buildStoreSelect() {
 sel.onchange = update;
 
 function cartLink(loc, code) {
-  return `https://www.lego.com/${loc}/cart?product=${code}`;
+  return `https://www.lego.com/${loc}/cart?product=${encodeURIComponent(code)}`;
 }
 
 function storeName(loc) {
@@ -491,11 +627,21 @@ function update() {
     $('allTitle').textContent = t('allTitle');
     const list = $('allList');
     list.innerHTML = '';
-    SETS.forEach(s => {
+    SETS.filter(s => s.code).forEach(s => {
       const url = cartLink(loc, s.code);
       const row = document.createElement('div');
       row.className = 'mini-row glass-panel';
-      row.innerHTML = `<div class="info"><div class="t">${s.code} · ${s.name}</div><div class="u">${url}</div></div>`;
+      const info = document.createElement('div');
+      info.className = 'info';
+      const title = document.createElement('div');
+      title.className = 't';
+      title.textContent = s.name ? `${s.code} · ${s.name}` : s.code;
+      const urlEl = document.createElement('div');
+      urlEl.className = 'u';
+      urlEl.textContent = url;
+      info.appendChild(title);
+      info.appendChild(urlEl);
+      row.appendChild(info);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'mini-btn';
@@ -545,7 +691,9 @@ $('copyBtn').onclick = () => copyText($('link').textContent, $('copyBtn'), t('co
 $('copyAllBtn').onclick = () => {
   const loc = sel.value;
   if (!loc) return;
-  const txt = SETS.map(s => `${s.code} ${s.name}\n${cartLink(loc, s.code)}`).join('\n\n');
+  const txt = SETS.filter(s => s.code)
+    .map(s => `${s.code} ${s.name}\n${cartLink(loc, s.code)}`.trim())
+    .join('\n\n');
   copyText(txt, $('copyAllBtn'), t('copyAll'));
 };
 
@@ -553,6 +701,7 @@ $('copyAllBtn').onclick = () => {
 const savedTheme = store.get('bdp6-theme');
 applyTheme(savedTheme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 applyLang(lang);
+$('restoreBtn').hidden = !isEdited();
 </script>
 </body>
 </html>
